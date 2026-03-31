@@ -2,11 +2,14 @@ const User = require('../models/User');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
+const allowedRoles = ['viewer', 'editor', 'admin'];
+
 exports.register = async (req, res) => {
   try {
-    const { username, password, organizationId } = req.body;
+    const { username, password, organizationId, role } = req.body;
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await User.create({ username, password: hashedPassword, organizationId });
+    const userRole = allowedRoles.includes(role) ? role : 'editor';
+    const user = await User.create({ username, password: hashedPassword, organizationId, role: userRole });
     res.status(201).json({ message: 'User registered' });
   } catch (err) {
     res.status(500).json({ error: err.message });

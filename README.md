@@ -107,3 +107,21 @@ video-streaming-app/
     │   ├── pages/          # Login & Dashboard Views
     │   └── main.jsx        # App Entry
     └── tailwind.config.js  # Styling Configuration
+
+---
+
+## ✅ Manual Verification Checklist
+
+1. **Auth & Access Control**
+   - Start MongoDB and run `npm start` inside `server/`.
+   - Register a new account at `http://localhost:5174` (client) with an Organization ID, then log in; confirm tokens are stored in `localStorage`.
+2. **Video Upload & Processing**
+   - Upload a small MP4 via the dashboard.
+   - Watch Socket.io toasts/logs update progress in ~20% increments until classification flips to Safe/Flagged.
+3. **Filtering & Library**
+   - Use the dashboard filters (status, sensitivity, search) to narrow the list; ensure the query string sent to `/api/videos` contains the expected params.
+4. **Streaming**
+   - Open a completed + safe video card, click **Watch Secure Stream**, and confirm playback issues HTTP 206 responses (check DevTools Network tab).
+   - Attempt to stream a flagged video as a non-admin user; the API should return `403 Content flagged as sensitive`.
+5. **Health Check**
+   - Run `curl http://localhost:5001/api/auth/health` after restarting the backend to verify the service is online.

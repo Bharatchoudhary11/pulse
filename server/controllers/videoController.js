@@ -32,7 +32,20 @@ exports.uploadVideo = async (req, res) => {
 // Get All Videos (Multi-tenant)
 exports.getVideos = async (req, res) => {
   try {
-    const videos = await Video.find({ organizationId: req.user.organizationId }).sort({ createdAt: -1 });
+    const { status, sensitivity, search } = req.query;
+
+    const filters = { organizationId: req.user.organizationId };
+
+    if (status && status !== 'all') filters.processingStatus = status;
+    if (sensitivity && sensitivity !== 'all') filters.sensitivityStatus = sensitivity;
+    if (search) {
+      filters.title = { $regex: search, $options: 'i' };
+    }
+
+    const videos = await Video.find(filters)
+      .sort({ createdAt: -1 })
+      .populate('uploadedBy', 'username role');
+
     res.json(videos);
   } catch (err) {
     res.status(500).json({ error: err.message });
