@@ -126,3 +126,12 @@ video-streaming-app/
    - Attempt to stream a flagged video as a non-admin user; the API should return `403 Content flagged as sensitive`.
 5. **Health Check**
    - Run `curl http://localhost:5001/api/auth/health` after restarting the backend to verify the service is online.
+
+## 🧪 Testing
+
+Backend smoke tests cover auth, RBAC upload restrictions, and admin management flows. Run them from the `server/` directory:
+
+```bash
+cd server
+npm test
+```

@@ -1,7 +1,6 @@
 require('dotenv').config();
 const express = require('express');
 const http = require('http');
-const mongoose = require('mongoose');
 const cors = require('cors');
 const { Server } = require('socket.io');
 const connectDB = require('./config/db');
@@ -13,20 +12,42 @@ const adminRoutes = require('./routes/adminRoutes');
 const app = express();
 const server = http.createServer(app);
 
-// Connect Database
-connectDB();
+// Only connect to the default database outside of tests
+if (process.env.NODE_ENV !== 'test') {
+  connectDB();
+}
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 
-// Socket.io Setup
-const io = new Server(server, {
-  cors: {
-    origin: "*", // Allow all for dev, restrict in prod
-    methods: ["GET", "POST"]
-  }
-});
+let io;
+if (process.env.NODE_ENV !== 'test') {
+  io = new Server(server, {
+    cors: {
+      origin: "*",
+      methods: ["GET", "POST"]
+    }
+  });
+
+  io.on('connection', (socket) => {
+    console.log('Client connected:', socket.id);
+    
+    socket.on('join_room', (userId) => {
+      socket.join(userId);
+      console.log(`User joined room: ${userId}`);
+    });
+
+    socket.on('disconnect', () => console.log('Client disconnected'));
+  });
+} else {
+  // lightweight stub for tests
+  io = {
+    to: () => ({
+      emit: () => {}
+    })
+  };
+}
 
 // Pass 'io' to every request
 app.use((req, res, next) => {
@@ -34,23 +55,14 @@ app.use((req, res, next) => {
   next();
 });
 
-// Socket Events
-io.on('connection', (socket) => {
-  console.log('Client connected:', socket.id);
-  
-  // Clients join a room named after their User ID for private notifications
-  socket.on('join_room', (userId) => {
-    socket.join(userId);
-    console.log(`User joined room: ${userId}`);
-  });
-
-  socket.on('disconnect', () => console.log('Client disconnected'));
-});
-
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/videos', videoRoutes);
 app.use('/api/admin', adminRoutes);
 
-const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+if (process.env.NODE_ENV !== 'test') {
+  const PORT = process.env.PORT || 5001;
+  server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+}
+
+module.exports = { app, server };
