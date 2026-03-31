@@ -41,6 +41,7 @@ The initial view for new workspaces, featuring the drag-and-drop upload zone and
 * **RBAC (Role-Based Access Control):** Differentiates between Viewers and Admins.
 * **JWT Authentication:** Secure stateless authentication.
 * **Content Locking:** Automatically locks playback for flagged content for non-admin users.
+* **Admin Console:** Workspace admins can inspect members and adjust viewer/editor/admin roles directly from the dashboard.
 
 ---
 

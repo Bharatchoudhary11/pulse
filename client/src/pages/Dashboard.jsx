@@ -7,13 +7,19 @@ import { Link } from 'react-router-dom';
 
 const socket = io(import.meta.env.VITE_API_URL);
 
+const roleOptions = ['viewer', 'editor', 'admin'];
+
 const Dashboard = () => {
   const { user, token, logout } = useContext(AuthContext);
+  const role = user?.role || 'viewer';
   const [videos, setVideos] = useState([]);
   const [statusFilter, setStatusFilter] = useState('all');
   const [sensitivityFilter, setSensitivityFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [orgUsers, setOrgUsers] = useState([]);
+  const [adminLoading, setAdminLoading] = useState(false);
+  const [roleMessage, setRoleMessage] = useState('');
 
   // --- Styles Object for guaranteed consistency ---
   const styles = {
@@ -101,6 +107,54 @@ const Dashboard = () => {
       padding: '0.7rem 0.9rem',
       color: '#e2e8f0',
       outline: 'none'
+    },
+    roleChip: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '0.4rem',
+      padding: '0.35rem 0.85rem',
+      borderRadius: '999px',
+      fontSize: '0.8rem',
+      textTransform: 'uppercase',
+      letterSpacing: '1px',
+      border: '1px solid rgba(255,255,255,0.1)'
+    },
+    readOnlyNotice: {
+      marginTop: '1.5rem',
+      padding: '1.5rem',
+      borderRadius: '16px',
+      border: '1px solid rgba(248,113,113,0.2)',
+      background: 'rgba(248,113,113,0.08)',
+      color: '#fecdd3'
+    },
+    adminPanel: {
+      marginTop: '2rem',
+      padding: '2rem',
+      borderRadius: '20px',
+      border: '1px solid rgba(99,102,241,0.2)',
+      background: 'rgba(99,102,241,0.1)',
+      backdropFilter: 'blur(12px)'
+    },
+    adminTable: {
+      width: '100%',
+      borderCollapse: 'separate',
+      borderSpacing: '0 0.75rem',
+      marginTop: '1.5rem'
+    },
+    adminRow: {
+      background: 'rgba(15, 23, 42, 0.7)',
+      borderRadius: '12px'
+    },
+    adminCell: {
+      padding: '0.85rem 1rem',
+      color: '#e2e8f0'
+    },
+    adminSelect: {
+      background: 'rgba(15, 23, 42, 0.9)',
+      border: '1px solid rgba(148,163,184,0.3)',
+      borderRadius: '10px',
+      padding: '0.35rem 0.75rem',
+      color: '#e2e8f0'
     },
     grid: {
       display: 'grid',
@@ -213,6 +267,43 @@ const Dashboard = () => {
     return () => socket.off('video_update', handleVideoUpdate);
   }, [user, fetchVideos]);
 
+  const fetchOrgUsers = useCallback(async () => {
+    if (user?.role !== 'admin') {
+      setOrgUsers([]);
+      return;
+    }
+    setAdminLoading(true);
+    try {
+      const res = await axios.get(`${import.meta.env.VITE_API_URL}/api/admin/users`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setOrgUsers(res.data);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setAdminLoading(false);
+    }
+  }, [token, user?.role]);
+
+  const handleRoleChange = async (userId, newRole) => {
+    try {
+      await axios.patch(
+        `${import.meta.env.VITE_API_URL}/api/admin/users/${userId}`,
+        { role: newRole },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setOrgUsers((prev) =>
+        prev.map((member) => (member._id === userId ? { ...member, role: newRole } : member))
+      );
+      setRoleMessage('Role updated');
+      setTimeout(() => setRoleMessage(''), 2000);
+    } catch (error) {
+      console.error(error);
+      setRoleMessage('Failed to update role');
+      setTimeout(() => setRoleMessage(''), 3000);
+    }
+  };
+
   const filteredVideos = useMemo(() => {
     return videos.filter((vid) => {
       const matchesStatus = statusFilter === 'all' ? true : vid.processingStatus === statusFilter;
@@ -223,6 +314,87 @@ const Dashboard = () => {
       return matchesStatus && matchesSensitivity && matchesSearch;
     });
   }, [videos, statusFilter, sensitivityFilter, debouncedSearch]);
+
+  useEffect(() => {
+    fetchOrgUsers();
+  }, [fetchOrgUsers]);
+
+  const roleDescriptions = {
+    viewer: 'Read-only access to approved media.',
+    editor: 'Upload and manage content for your workspace.',
+    admin: 'Full workspace control, including user management.'
+  };
+
+  const roleAccent = {
+    viewer: 'rgba(148,163,184,0.2)',
+    editor: 'rgba(96,165,250,0.3)',
+    admin: 'rgba(192,132,252,0.4)'
+  };
+
+  const renderRoleModules = () => {
+    if (role === 'viewer') {
+      return (
+        <div style={styles.readOnlyNotice}>
+          <strong>Viewer Access:</strong> {roleDescriptions.viewer} Contact an admin if you need elevated permissions.
+        </div>
+      );
+    }
+
+    if (role === 'editor') {
+      return <UploadForm onUploadStart={fetchVideos} />;
+    }
+
+    // admin
+    return (
+      <>
+        <UploadForm onUploadStart={fetchVideos} />
+        <section style={styles.adminPanel}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 700 }}>Organization Members</h3>
+              <p style={{ margin: 0, color: '#c7d2fe', fontSize: '0.9rem' }}>Manage roles for {user.organizationId}</p>
+            </div>
+            {roleMessage && <span style={{ color: '#34d399', fontWeight: 600 }}>{roleMessage}</span>}
+          </div>
+          {adminLoading ? (
+            <p style={{ marginTop: '1.5rem', color: '#cbd5e1' }}>Loading members…</p>
+          ) : (
+            <table style={styles.adminTable}>
+              <thead>
+                <tr>
+                  <th style={{ ...styles.adminCell, textAlign: 'left', color: '#94a3b8', fontSize: '0.85rem' }}>User</th>
+                  <th style={{ ...styles.adminCell, textAlign: 'left', color: '#94a3b8', fontSize: '0.85rem' }}>Role</th>
+                  <th style={{ ...styles.adminCell, textAlign: 'left', color: '#94a3b8', fontSize: '0.85rem' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {orgUsers.map((member) => (
+                  <tr key={member._id} style={styles.adminRow}>
+                    <td style={styles.adminCell}>
+                      <strong>{member.username}</strong>
+                      <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{member.organizationId}</div>
+                    </td>
+                    <td style={styles.adminCell}>{member.role}</td>
+                    <td style={styles.adminCell}>
+                      <select
+                        style={styles.adminSelect}
+                        value={member.role}
+                        onChange={(e) => handleRoleChange(member._id, e.target.value)}
+                      >
+                        {roleOptions.map((option) => (
+                          <option key={option} value={option}>{option}</option>
+                        ))}
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
+      </>
+    );
+  };
 
   return (
     <div style={styles.container}>
@@ -240,6 +412,10 @@ const Dashboard = () => {
             <div style={styles.workspaceBadge}>
               <div style={{ width: '8px', height: '8px', background: '#4ade80', borderRadius: '50%', boxShadow: '0 0 10px #4ade80' }}></div>
               {user?.organizationId || 'Workspace'}
+            </div>
+            <div style={{ ...styles.roleChip, borderColor: roleAccent[role], color: '#e0e7ff' }}>
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: roleAccent[role], boxShadow: `0 0 10px ${roleAccent[role]}` }}></span>
+              {role.toUpperCase()}
             </div>
           </div>
           
@@ -311,7 +487,7 @@ const Dashboard = () => {
           </div>
         </div>
 
-        <UploadForm onUploadStart={fetchVideos} />
+        {renderRoleModules()}
 
         {/* Section Divider */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginTop: '4rem', marginBottom: '2rem' }}>
@@ -398,7 +574,7 @@ const Dashboard = () => {
         </div>
         
         {/* Empty State */}
-        {videos.length === 0 && (
+        {filteredVideos.length === 0 && (
           <div style={{ textAlign: 'center', padding: '6rem 2rem', border: '2px dashed rgba(255,255,255,0.1)', borderRadius: '24px', marginTop: '2rem', background: 'rgba(15, 23, 42, 0.3)' }}>
             <div style={{ background: 'rgba(30, 41, 59, 0.5)', width: '80px', height: '80px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem auto' }}>
               <svg width="40" height="40" stroke="rgba(148, 163, 184, 0.5)" fill="none" strokeWidth="1.5" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"></path></svg>
