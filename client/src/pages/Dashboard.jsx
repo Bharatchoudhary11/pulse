@@ -1,4 +1,4 @@
-import { useEffect, useState, useContext } from 'react';
+import { useEffect, useState, useContext, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import io from 'socket.io-client';
 import { AuthContext } from '../context/AuthContext';
@@ -10,6 +10,10 @@ const socket = io(import.meta.env.VITE_API_URL);
 const Dashboard = () => {
   const { user, token, logout } = useContext(AuthContext);
   const [videos, setVideos] = useState([]);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [sensitivityFilter, setSensitivityFilter] = useState('all');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
 
   // --- Styles Object for guaranteed consistency ---
   const styles = {
@@ -69,6 +73,34 @@ const Dashboard = () => {
       transition: 'all 0.2s ease',
       fontWeight: '600',
       backdropFilter: 'blur(10px)'
+    },
+    filterBar: {
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: '1rem',
+      padding: '1.5rem',
+      background: 'rgba(15, 23, 42, 0.6)',
+      borderRadius: '16px',
+      border: '1px solid rgba(255,255,255,0.05)',
+      marginTop: '1rem'
+    },
+    filterField: {
+      flex: '1 1 220px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '0.35rem',
+      color: '#94a3b8',
+      fontSize: '0.85rem',
+      fontWeight: '600',
+      letterSpacing: '0.5px'
+    },
+    filterControl: {
+      background: 'rgba(15, 23, 42, 0.8)',
+      border: '1px solid rgba(255,255,255,0.1)',
+      borderRadius: '10px',
+      padding: '0.7rem 0.9rem',
+      color: '#e2e8f0',
+      outline: 'none'
     },
     grid: {
       display: 'grid',
@@ -142,9 +174,8 @@ const Dashboard = () => {
     }
   };
 
-  const fetchVideos = async () => {
+  const fetchVideos = useCallback(async () => {
     try {
-      // CHANGED: Uses VITE_API_URL from your .env file
       const res = await axios.get(`${import.meta.env.VITE_API_URL}/api/videos`, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -152,23 +183,46 @@ const Dashboard = () => {
     } catch (err) {
       console.error(err);
     }
-  };
+  }, [token]);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchTerm.trim());
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [searchTerm]);
 
   useEffect(() => {
     fetchVideos();
+  }, [fetchVideos]);
+
+  useEffect(() => {
     if (user && user.id) socket.emit('join_room', user.id);
 
-    socket.on('video_update', (data) => {
+    const handleVideoUpdate = (data) => {
       setVideos((prev) => prev.map((vid) =>
         vid._id === data.videoId
           ? { ...vid, processingStatus: data.status, progress: data.progress, sensitivityStatus: data.sensitivity || vid.sensitivityStatus }
           : vid
       ));
-      if(data.progress === 0) fetchVideos();
-    });
+      if (data.progress === 0) fetchVideos();
+    };
 
-    return () => socket.off('video_update');
-  }, [user]);
+    socket.on('video_update', handleVideoUpdate);
+
+    return () => socket.off('video_update', handleVideoUpdate);
+  }, [user, fetchVideos]);
+
+  const filteredVideos = useMemo(() => {
+    return videos.filter((vid) => {
+      const matchesStatus = statusFilter === 'all' ? true : vid.processingStatus === statusFilter;
+      const matchesSensitivity = sensitivityFilter === 'all' ? true : vid.sensitivityStatus === sensitivityFilter;
+      const matchesSearch = debouncedSearch
+        ? vid.title?.toLowerCase().includes(debouncedSearch.toLowerCase())
+        : true;
+      return matchesStatus && matchesSensitivity && matchesSearch;
+    });
+  }, [videos, statusFilter, sensitivityFilter, debouncedSearch]);
 
   return (
     <div style={styles.container}>
@@ -195,18 +249,80 @@ const Dashboard = () => {
           </button>
         </header>
 
+        <div style={styles.filterBar}>
+          <div style={styles.filterField}>
+            <span>Processing Status</span>
+            <select
+              style={styles.filterControl}
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              <option value="all">All statuses</option>
+              <option value="pending">Pending</option>
+              <option value="processing">Processing</option>
+              <option value="completed">Completed</option>
+            </select>
+          </div>
+
+          <div style={styles.filterField}>
+            <span>Sensitivity</span>
+            <select
+              style={styles.filterControl}
+              value={sensitivityFilter}
+              onChange={(e) => setSensitivityFilter(e.target.value)}
+            >
+              <option value="all">All classifications</option>
+              <option value="analyzing">Analyzing</option>
+              <option value="safe">Safe</option>
+              <option value="flagged">Flagged</option>
+            </select>
+          </div>
+
+          <div style={styles.filterField}>
+            <span>Search Title</span>
+            <input
+              type="text"
+              placeholder="e.g. training session"
+              style={{ ...styles.filterControl, borderStyle: 'solid' }}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+            <button
+              style={{
+                padding: '0.75rem 1.5rem',
+                borderRadius: '12px',
+                border: '1px solid rgba(148,163,184,0.3)',
+                background: 'transparent',
+                color: '#cbd5e1',
+                cursor: 'pointer'
+              }}
+              onClick={() => {
+                setStatusFilter('all');
+                setSensitivityFilter('all');
+                setSearchTerm('');
+                setDebouncedSearch('');
+              }}
+            >
+              Reset
+            </button>
+          </div>
+        </div>
+
         <UploadForm onUploadStart={fetchVideos} />
 
         {/* Section Divider */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginTop: '4rem', marginBottom: '2rem' }}>
            <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#fff', margin: 0 }}>Content Library</h2>
            <div style={{ height: '1px', flex: 1, background: 'linear-gradient(to right, rgba(255,255,255,0.2), transparent)' }}></div>
-           <span style={{ fontSize: '0.85rem', color: '#64748b', fontFamily: 'monospace' }}>{videos.length} ASSETS</span>
+           <span style={{ fontSize: '0.85rem', color: '#64748b', fontFamily: 'monospace' }}>{filteredVideos.length} ASSETS</span>
         </div>
 
         {/* Video Grid */}
         <div style={styles.grid}>
-          {videos.map((vid) => (
+          {filteredVideos.map((vid) => (
             <div key={vid._id} style={styles.card}>
               
               {/* Thumbnail Area */}

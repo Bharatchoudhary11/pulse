@@ -8,6 +8,7 @@ const Login = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [orgId, setOrgId] = useState('');
+  const [role, setRole] = useState('editor');
 
   const { login } = useContext(AuthContext);
   const navigate = useNavigate();
@@ -141,7 +142,8 @@ const Login = () => {
         await axios.post(`${import.meta.env.VITE_API_URL}/api/auth/register`, {
           username,
           password,
-          organizationId: orgId || 'MyOrg'
+          organizationId: orgId || 'MyOrg',
+          role
         });
         alert('Registration successful! Please login.');
         setIsRegistering(false);
@@ -246,6 +248,31 @@ const Login = () => {
                   onFocus={(e) => e.target.style.borderColor = '#8b5cf6'}
                   onBlur={(e) => e.target.style.borderColor = 'rgba(255,255,255,0.1)'}
                 />
+              </div>
+            </div>
+
+            {/* Role Selector */}
+            <div style={{ 
+              overflow: 'hidden', 
+              transition: 'all 0.3s ease', 
+              maxHeight: isRegistering ? '120px' : '0',
+              opacity: isRegistering ? 1 : 0,
+              marginBottom: isRegistering ? '1.5rem' : '0'
+            }}>
+              <div style={{ position: 'relative' }}>
+                <div style={styles.icon}>
+                  <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5V4H2v16h5m10 0V10m0 10H7m0 0V10"></path></svg>
+                </div>
+                <select
+                  style={{ ...styles.input, appearance: 'none', paddingLeft: '3rem', cursor: 'pointer' }}
+                  value={role}
+                  onChange={(e) => setRole(e.target.value)}
+                  required={isRegistering}
+                >
+                  <option value="viewer">Viewer</option>
+                  <option value="editor">Editor</option>
+                  <option value="admin">Admin</option>
+                </select>
               </div>
             </div>
 
