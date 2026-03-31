@@ -135,3 +135,49 @@ Backend smoke tests cover auth, RBAC upload restrictions, and admin management f
 cd server
 npm test
 ```
+
+## 📡 API Reference
+
+| Endpoint | Method | Description | Auth | Roles |
+| --- | --- | --- | --- | --- |
+| `/api/auth/register` | POST | Create a new user with `{ username, password, organizationId, role }`. | Public | — |
+| `/api/auth/login` | POST | Exchange credentials for a JWT (returned along with user profile). | Public | — |
+| `/api/videos/upload` | POST | Upload a video (`multipart/form-data` with `video` + `title`). | Bearer token | editor, admin |
+| `/api/videos` | GET | List organization videos. Accepts `status`, `sensitivity`, `search` query params. | Bearer token | viewer, editor, admin |
+| `/api/videos/stream/:id` | GET | HTTP range-enabled streaming of a processed video (adds `token` query fall back for `<video>` tag). | Bearer token | viewer (safe only), editor (safe only), admin (all) |
+| `/api/admin/users` | GET | List members of the caller’s organization. | Bearer token | admin |
+| `/api/admin/users/:id` | PATCH | Update a member’s role (`viewer/editor/admin`). | Bearer token | admin |
+| `/api/auth/health` | GET | Lightweight health probe. | Public | — |
+
+## 👤 User Manual
+
+1. **Sign Up / Login**
+   - Open the client (default Vite dev server on `http://localhost:5174`).
+   - Register with username, password, organization ID, and a role (viewer/editor/admin). Log in with the same credentials; tokens persist in `localStorage`.
+2. **Dashboard Overview**
+   - Header shows your organization and role chip. Viewer accounts get a read-only notice; editors/admins see the upload module; admins additionally see the organization member panel.
+3. **Uploading**
+   - Drag-and-drop or click to select a video, enter a title, and hit “Upload Content.” Progress indicators disable the button until completion. Each successful upload triggers the processing pipeline automatically.
+4. **Processing Feedback**
+   - Watch the grid cards for progress bars and Socket.io driven updates. “Processing” cards show the current percentage; completed cards get Safe/Flagged badges.
+5. **Review & Streaming**
+   - Use the filters (status, sensitivity, search) to locate assets. Safe videos expose “Watch Stream,” opening the secure player with HTTP 206 streaming. Flagged videos stay locked unless you’re an admin.
+6. **Admin Management**
+   - Admins can scroll to the “Organization Members” panel to inspect users and change their roles via the inline select boxes. Updates happen instantly through the admin API.
+
+## 🏗️ Architecture Overview
+
+- **Frontend (client/):** React + Vite single-page app with context-based auth, Axios for API calls, Socket.io client for real-time updates, and role-driven conditional rendering.
+- **Backend (server/):** Express REST API organized into controllers/middleware/routes, Mongoose models for Users and Videos, and a simulated sensitivity-processing service that broadcasts Socket.io events.
+- **Real-Time Layer:** Socket.io (HTTP upgrade on the same Node server) informs clients about processing progress and sensitivity outcomes; each user joins a private room keyed by user ID.
+- **Storage & Data:** MongoDB (Atlas or local) holds users/videos. Binary uploads live on disk (`server/uploads`) with sanitized filenames; streaming leverages HTTP range requests for efficient playback.
+- **Security:** JWT auth, role-based middleware for uploads/admin endpoints, tenant checks on every query, bcrypt password hashing, and `.env` driven configuration so secrets stay out of version control.
+
+## 📌 Assumptions & Design Decisions
+
+- **Sensitivity Engine:** The current implementation simulates AI classification with deterministic progress updates and a random safe/flagged outcome (30% chance). It’s structured so a real ML service can replace `services/videoProcessor.js`.
+- **Local File Storage:** Videos are stored on the server filesystem for simplicity. In production you’d map the Multer destination to object storage (S3, GCS) but the code isolates the storage layer for easy swaps.
+- **Role Defaults:** New users default to `editor` unless they explicitly choose another role. Admin creation is allowed at signup for bootstrap purposes; production deployments should gate this (e.g., invite codes).
+- **Tenant Isolation:** All queries filter by `organizationId` taken from the JWT, assuming users belong to exactly one workspace. Cross-org collaboration is out of scope.
+- **Streaming Authorization:** Download URLs require either an `Authorization` header or a `token` query param (used only by the HTML `<video>` tag). Tokens are short-lived (1 day) and refreshed on login.
+- **Testing Scope:** Jest-based tests focus on critical auth/RBAC flows. UI tests and load testing are intentionally deferred but the structure accommodates additional suites if needed.
